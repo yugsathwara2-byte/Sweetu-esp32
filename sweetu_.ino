@@ -5,7 +5,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
-#include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -13,11 +13,17 @@
 const char* ssid = "HAR HAR MAHADEV 🙏";
 const char* password = "4380.1980.";
 
+const char* ha_url = "http://13.126.44.22:8123/api/";
+const char* token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNmJkZTNjMzg4ZDQ0YTM0YTZjM2U1NzliOTBlNzFjMSIsImlhdCI6MTc4MDkxNTEwMiwiZXhwIjoyMDk2Mjc1MTAyfQ.nyHy8J4e4GS4Z6PP6SbIu7jnizGrQ24SVhl-Ukiif7I";
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 WebServer server(80);
 
 String conversationId = "";
+String lastReply = "";
+
+const char* WLED_IP = "192.168.0.104";
 
 void showText(String text)
 {
@@ -207,75 +213,266 @@ server.send(
 aiReply);
 }
 
+
+
 String askSweetu(String message)
 {
-  WiFiClientSecure client;
-  client.setInsecure(); // Skip certificate validation for Vercel
+HTTPClient http;
+
+String url =
+"http://13.126.44.22:8123/api/conversation/process";
+
+http.begin(url);
+
+http.setTimeout(30000);
+
+http.addHeader(
+"Authorization",
+"Bearer " + String(token));
+
+http.addHeader(
+"Content-Type",
+"application/json");
+
+DynamicJsonDocument req(1024);
+
+req["text"] = message;
+
+req["agent_id"] =
+"conversation.google_ai_conversation_2";
+
+if(conversationId.length() > 0)
+{
+req["conversation_id"] =
+conversationId;
+}
+
+String payload;
+
+serializeJson(req, payload);
+
+int code = http.POST(payload);
+Serial.println("PAYLOAD:");
+Serial.println(payload);
+
+Serial.print("HTTP Code: ");
+Serial.println(code);
+
+if(code != 200)
+{
+  Serial.println("ERROR RESPONSE:");
+  Serial.println(http.getString());
+
+  http.end();
+  return "API Error";
+}
+
+String response =
+http.getString();
+
+Serial.println(response);
+
+DynamicJsonDocument doc(8192);
+
+DeserializationError error =
+deserializeJson(doc, response);
+
+if(error)
+{
+http.end();
+return "JSON Error";
+}
+
+if(doc["conversation_id"])
+{
+conversationId =
+doc["conversation_id"]
+.as<String>();
+}
+
+String reply =
+doc["response"]["speech"]
+["plain"]["speech"]
+.as<String>();
+
+Serial.print("AI Reply: ");
+Serial.println(reply);
+
+if(reply.startsWith("WLED_RGB:"))
+{
+  String rgb = reply.substring(9);
+
+  int first = rgb.indexOf(',');
+  int second = rgb.indexOf(',', first + 1);
+
+  int r = rgb.substring(0, first).toInt();
+  int g = rgb.substring(first + 1, second).toInt();
+  int b = rgb.substring(second + 1).toInt();
+
+  sendWledRGB(r, g, b);
+
+  http.end();
+  return "LED color changed";
+}
+else if(reply.startsWith("WLED_EFFECT:"))
+{
+  String effect = reply.substring(12);
+  effect.trim();
+
+  sendWledEffect(effect);
+
+  http.end();
+  return "LED effect changed";
+}
+else if(reply.startsWith("WLED_BRIGHTNESS:"))
+{
+  int brightness = reply.substring(16).toInt();
+
+  sendWledBrightness(brightness);
+
+  http.end();
+  return "LED brightness changed";
+}
+else if(reply.startsWith("WLED_POWER:"))
+{
+  String power = reply.substring(11);
+  power.trim();
+
+  sendWledPower(power);
+
+  http.end();
+  return "LED power changed";
+}
+
+http.end();
+return reply;
+}
+void sendWledRGB(int r, int g, int b)
+{
+  HTTPClient http;
+
+  String url =
+  "http://" +
+  String(WLED_IP) +
+  "/json/state";
+
+  http.begin(url);
+
+  http.addHeader(
+  "Content-Type",
+  "application/json");
+
+  String json =
+  "{\"on\":true,\"seg\":[{\"col\":[[" +
+  String(r) + "," +
+  String(g) + "," +
+  String(b) +
+  "]]}]}";
+
+  http.POST(json);
+
+  http.end();
+}
+void sendWledEffect(String effect)
+{
+  HTTPClient http;
+
+  String url =
+  "http://" +
+  String(WLED_IP) +
+  "/json/state";
+
+  http.begin(url);
+
+  http.addHeader(
+  "Content-Type",
+  "application/json");
+
+  String json;
+
+  if(effect == "rainbow")
+  {
+    json =
+    "{\"on\":true,\"seg\":[{\"fx\":9}]}";
+  }
+  else if(effect == "fire")
+  {
+    json =
+    "{\"on\":true,\"seg\":[{\"fx\":45}]}";
+  }
+  else if(effect == "blink")
+  {
+    json =
+    "{\"on\":true,\"seg\":[{\"fx\":1}]}";
+  }
+  else
+  {
+    http.end();
+    return;
+  }
+
+  http.POST(json);
+
+  http.end();
+}
+
+void sendWledPower(String power)
+{
+  HTTPClient http;
+
+  String url =
+  "http://" +
+  String(WLED_IP) +
+  "/json/state";
+
+  http.begin(url);
+
+  http.addHeader(
+  "Content-Type",
+  "application/json");
+
+  String json =
+  (power == "on")
+  ? "{\"on\":true}"
+  : "{\"on\":false}";
+
+  http.POST(json);
+
+  http.end();
+}
+
+void sendWledBrightness(int brightness)
+{
+  brightness = constrain(brightness, 0, 60);
+
+  int bri = map(brightness, 0, 60, 0, 255);
 
   HTTPClient http;
 
-  String url = "https://your-sweetu-backend.vercel.app/api/chat";
+  String url =
+    "http://" +
+    String(WLED_IP) +
+    "/json/state";
 
-  http.begin(client, url);
-  http.setTimeout(30000);
+  http.begin(url);
+
   http.addHeader("Content-Type", "application/json");
 
-  DynamicJsonDocument req(1024);
-  req["message"] = message;
+  String json =
+    "{\"on\":true,\"bri\":" +
+    String(bri) +
+    "}";
 
-  if(conversationId.length() > 0)
-  {
-    req["conversation_id"] = conversationId;
-  }
-
-  String payload;
-  serializeJson(req, payload);
-
-  int code = http.POST(payload);
-  Serial.println("PAYLOAD:");
-  Serial.println(payload);
-
-  Serial.print("HTTP Code: ");
-  Serial.println(code);
-
-  if(code != 200 && code != 502)
-  {
-    Serial.println("ERROR RESPONSE:");
-    Serial.println(http.getString());
-
-    http.end();
-    return "API Error";
-  }
-
-  String response = http.getString();
-  Serial.println(response);
-
-  DynamicJsonDocument doc(8192);
-  DeserializationError error = deserializeJson(doc, response);
-
-  if(error)
-  {
-    http.end();
-    return "JSON Error";
-  }
-
-  if(doc["conversation_id"])
-  {
-    conversationId = doc["conversation_id"].as<String>();
-  }
-
-  String reply = doc["text"].as<String>();
-
-  Serial.print("AI Reply: ");
-  Serial.println(reply);
+  http.POST(json);
 
   http.end();
-  return reply;
 }
+
 
 void setup()
 {
   Serial.begin(115200);
+
   Wire.begin(21, 22);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
@@ -295,7 +492,32 @@ void setup()
   Serial.print("ESP32 IP: ");
   Serial.println(WiFi.localIP());
 
-  showText("Connected! Ready.");
+  showText("Testing HA");
+
+  HTTPClient http;
+
+  http.begin(ha_url);
+
+  http.addHeader(
+    "Authorization",
+    "Bearer " + String(token));
+
+  http.addHeader(
+    "Content-Type",
+    "application/json");
+
+  int code = http.GET();
+
+  if (code == 200)
+  {
+    showText("HA Connected");
+  }
+  else
+  {
+    showText("HA Error: " + String(code));
+  }
+
+  http.end();
 
   server.on("/", handleRoot);
   server.on("/send", handleSend);
