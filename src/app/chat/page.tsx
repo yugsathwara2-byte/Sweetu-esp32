@@ -52,7 +52,7 @@ export default function ChatPage() {
     <div className="flex flex-col h-full bg-[var(--bg)]">
       <header className="surface border-b border-[var(--border)] px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/" className="lg:hidden btn-ghost p-2 rounded-lg"><ArrowLeft className="w-4 h-4" /></Link>
+          <Link href="/" className="btn-ghost p-2 rounded-lg"><ArrowLeft className="w-4 h-4" /></Link>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent)] to-orange-500 flex items-center justify-center">
             <Bot className="w-5 h-5 text-white" />
           </div>

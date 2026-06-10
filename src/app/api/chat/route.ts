@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { processConversation, HaError } from '@/lib/homeassistant';
 import { getHaConfig } from '@/lib/config';
 import { buildAssistantContext } from '@/lib/memory-context';
+import { handleIntentRouter } from '@/lib/sweetu-os';
+import { query } from '@/lib/db';
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +19,25 @@ export async function POST(req: Request) {
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message text is required' }, { status: 400 });
+    }
+
+    try {
+      await query("INSERT INTO chat_history (user_id, message, sender) VALUES ($1, $2, 'user')", [1, message]);
+    } catch (dbError) {
+      console.error('Failed to log user message:', dbError);
+    }
+
+    const localIntentResponse = await handleIntentRouter(message, 1);
+    if (localIntentResponse) {
+      try {
+        await query("INSERT INTO chat_history (user_id, message, sender) VALUES ($1, $2, 'sweetu')", [1, localIntentResponse.text]);
+      } catch (dbError) {
+        console.error('Failed to log sweetu local response:', dbError);
+      }
+      return NextResponse.json({
+        text: localIntentResponse.text,
+        conversation_id: conversation_id || `local-${Date.now()}`,
+      });
     }
 
     const serverConfig = getHaConfig();
@@ -49,13 +70,22 @@ export async function POST(req: Request) {
           conversation_id,
           overrides
         );
+        try {
+          await query("INSERT INTO chat_history (user_id, message, sender) VALUES ($1, $2, 'sweetu')", [1, result.text]);
+        } catch (dbError) {
+          console.error('Failed to log sweetu response:', dbError);
+        }
         return NextResponse.json(result);
       } catch (haError) {
         const msg = haError instanceof HaError ? haError.message : 'HA connection failed';
         console.error('HA conversation error:', msg);
+        const errorText = `Couldn't reach Home Assistant on AWS right now. ${msg}`;
+        try {
+          await query("INSERT INTO chat_history (user_id, message, sender) VALUES ($1, $2, 'sweetu')", [1, errorText]);
+        } catch (e) {}
         return NextResponse.json(
           {
-            text: `Couldn't reach Home Assistant on AWS right now. ${msg}`,
+            text: errorText,
             conversation_id: conversation_id || null,
             fallback: true,
           },
@@ -64,11 +94,13 @@ export async function POST(req: Request) {
       }
     }
 
-    const reply = buildLocalReply(message);
-    await new Promise((r) => setTimeout(r, 600));
-
+    const offlineText = "I'm in offline mode. Add HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN in Vercel (or Settings) to connect to your AWS instance.";
+    try {
+      await query("INSERT INTO chat_history (user_id, message, sender) VALUES ($1, $2, 'sweetu')", [1, offlineText]);
+    } catch (e) {}
+    
     return NextResponse.json({
-      text: reply,
+      text: offlineText,
       conversation_id: conversation_id || `local-${Date.now()}`,
       fallback: true,
     });
@@ -76,18 +108,4 @@ export async function POST(req: Request) {
     console.error('Chat route error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
-}
-
-function buildLocalReply(message: string) {
-  const lower = message.toLowerCase();
-  if (lower.includes('hello') || lower.includes('hi ') || lower.includes('hey')) {
-    return "Morning, Yug. Sweetu v2 is live — hook up your AWS Home Assistant URL in Vercel env vars and I'll run on the same Gemini brain as your ESP32.";
-  }
-  if (lower.includes('gaming')) {
-    return "Done. Gaming mode preset is ready — once HA is connected I'll flip your monitors and WLED strips.";
-  }
-  if (lower.includes('anime wall')) {
-    return "On it. Anime Wall will go rainbow once your WLED entity is linked in Devices.";
-  }
-  return "I'm in offline mode. Add HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN in Vercel (or Settings) to connect to your AWS instance.";
 }

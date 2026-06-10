@@ -50,7 +50,6 @@ export default function Nav() {
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-40 w-[248px] flex flex-col border-r border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur-xl
         transition-transform duration-300 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}
-        ${isChat ? 'lg:hidden' : ''}
       `}>
         <div className="p-5 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
