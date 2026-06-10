@@ -124,7 +124,7 @@ export default function DevicesPage() {
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Friendly name" className="input-field w-full px-3 py-2 rounded-xl text-sm" />
               <input value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Room" className="input-field w-full px-3 py-2 rounded-xl text-sm" />
               <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Description" className="input-field w-full px-3 py-2 rounded-xl text-sm h-20 resize-none" />
-              {['wled', 'esp32', 'relay'].includes(form.type) && (
+              {['wled', 'esp32', 'relay'].includes(form.type || '') && (
                 <input value={form.wledIp || ''} onChange={(e) => setForm({ ...form, wledIp: e.target.value })} placeholder="Device IP (optional, e.g. 192.168.1.50)" className="input-field w-full px-3 py-2 rounded-xl text-sm" />
               )}
               <p className="text-[10px] text-[var(--text-muted)]">Entity: {form.entityId}</p>
